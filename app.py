@@ -7,6 +7,7 @@
 # + be able to change the colour with the click of a button     #
 # + add the option to not link a point to make a gap            #
 # + create a function to export data in GPX format              #
+# + add option to delete previous drawing                       #
 #################################################################
 
 import app
@@ -134,8 +135,8 @@ class GPSSketcher(app.App):
             if self.gga.Latitude > 0 and self.rmc.Latitude > 0:
                 if len(self.track) == 0:
                     self.track.append([
-                        self.nmea_to_decimal(self.gga.Latitude),
-                        self.nmea_to_decimal(self.gga.Longitude),
+                        self.nmea_to_decimal(self.gga.Latitude, self.gga.NS_Indicator),
+                        self.nmea_to_decimal(self.gga.Longitude, self.gga.EW_Indicator),
                         self.gga.UTC_Time,
                         self.rmc.Date,
                         self.gga.HDOP,
@@ -151,11 +152,11 @@ class GPSSketcher(app.App):
                     self.gga.HDOP < 1.2
                 ):
                     
-                    x,y = self.latlon_to_xy(self.track[-1][0], self.track[-1][1], self.nmea_to_decimal(self.gga.Latitude), self.nmea_to_decimal(self.gga.Longitude))
+                    x,y = self.latlon_to_xy(self.track[-1][0], self.track[-1][1], self.nmea_to_decimal(self.gga.Latitude, self.gga.NS_Indicator), self.nmea_to_decimal(self.gga.Longitude, self.gga.EW_Indicator))
                     if abs(x) > 1 or abs(y) > 1:
                         self.track.append([
-                            self.nmea_to_decimal(self.gga.Latitude),
-                            self.nmea_to_decimal(self.gga.Longitude),
+                            self.nmea_to_decimal(self.gga.Latitude, self.gga.NS_Indicator),
+                            self.nmea_to_decimal(self.gga.Longitude, self.gga.EW_Indicator),
                             self.gga.UTC_Time,
                             self.rmc.Date,
                             self.gga.HDOP,
@@ -165,8 +166,8 @@ class GPSSketcher(app.App):
                         ])
                         self.display_points.append(
                             (
-                                self.nmea_to_decimal(float(self.gga.Latitude)),
-                                self.nmea_to_decimal(float(self.gga.Longitude))
+                                self.nmea_to_decimal(self.gga.Latitude, self.gga.NS_Indicator),
+                                self.nmea_to_decimal(self.gga.Longitude, self.gga.EW_Indicator)
                             )
                         )
                         self.build_pixel_list()
@@ -176,16 +177,16 @@ class GPSSketcher(app.App):
                     
                 if len(self.track) > 10:
                     try:
-                        os.listdir('/data/sketcher')
+                        os.listdir('/data/GPSSketcher')
                     except:
                         print("no folder, creating a new one")
-                        os.mkdir('/data/sketcher')
-                    if not f"{self.rmc.Date}.csv" in os.listdir('/data/sketcher'):
+                        os.mkdir('/data/GPSSketcher')
+                    if not f"GPSlog.csv" in os.listdir('/data/GPSSketcher'):
                         print("file not found, creating a new one")
-                        file = open(f"/data/sketcher/{self.rmc.Date}.csv",'w')
+                        file = open(f"/data/GPSSketcher/GPSlog.csv",'w')
                         file.write("Latitude,Longitude,Time,Date,HDOP,Satellites,DeltaX,DeltaY\n")
                         file.close()
-                    file = open(f"/data/sketcher/{self.rmc.Date}.csv",'a')
+                    file = open(f"/data/GPSSketcher/GPSlog.csv",'a')
                     for trackpoint in self.track[:-1]:
                         file.write(f"{trackpoint[0]},{trackpoint[1]},{trackpoint[2]},{trackpoint[3]},{trackpoint[4]},{trackpoint[5]},{trackpoint[6]},{trackpoint[7]}\n")
                     file.close()
@@ -200,6 +201,8 @@ class GPSSketcher(app.App):
         if not self.gps:
             ctx.move_to(-90, 10).text("GPS Not Found")
             return
+        
+        # add a startup feature to start a new drawing or continue with the old
 
         if not self.last_position:
             ctx.move_to(-110, 10).text("Waiting For Fix")
@@ -285,7 +288,7 @@ class GPSSketcher(app.App):
     def collect_points(self):
         if len(self.display_points) == 0:
             try:
-                with open(f"/data/sketcher/{self.rmc.Date}.csv", "r") as f:
+                with open(f"/data/GPSSketcher/GPSlog.csv", "r") as f:
                     f.readline()
                     for line in f:
                         lat, lon, time, date, HDOP, sats, x, y = line.strip().split(",")
@@ -312,10 +315,15 @@ class GPSSketcher(app.App):
 
         return x, y
     
-    def nmea_to_decimal(self,coord):
+    def nmea_to_decimal(self,coord,direction):
         degrees = int(coord / 100)
         minutes = coord - (degrees * 100)
-        return degrees + (minutes / 60)
+        decimal = degrees + (minutes / 60)
+
+        if direction in ("S", "W"):
+            decimal = -decimal
+        
+        return decimal
 
     def parseGGA(self,last_sentence):
         
