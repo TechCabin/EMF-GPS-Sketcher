@@ -153,7 +153,7 @@ class GPSSketcher(app.App):
                 ):
                     
                     x,y = self.latlon_to_xy(self.track[-1][0], self.track[-1][1], self.nmea_to_decimal(self.gga.Latitude, self.gga.NS_Indicator), self.nmea_to_decimal(self.gga.Longitude, self.gga.EW_Indicator))
-                    if abs(x) > 1 or abs(y) > 1:
+                    if abs(x) > 3 or abs(y) > 3:
                         self.track.append([
                             self.nmea_to_decimal(self.gga.Latitude, self.gga.NS_Indicator),
                             self.nmea_to_decimal(self.gga.Longitude, self.gga.EW_Indicator),
