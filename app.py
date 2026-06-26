@@ -17,6 +17,7 @@ import os
 from events.input import Buttons, BUTTON_TYPES, ButtonDownEvent, ButtonUpEvent
 from system.eventbus import eventbus
 from system.hexpansion.util import get_app_by_vid_pid
+from app_components import YesNoDialog
 
 class GGA:
     def __init__(self):
@@ -82,6 +83,21 @@ class GPSSketcher(app.App):
         print(free_bytes)
         self.display_points = []
         self.screen_points = []
+        self.dialog = None
+        self.answer = ""
+        self.displayed = False
+
+    def _no_handler(self):
+        #self.dialog._cleanup()
+        print("inside _no_handler")
+        self.answer = "No"
+        self.dialog = None
+
+    def _yes_handler(self):
+        #self.dialog._cleanup()
+        print("inside _yes_handler")
+        self.answer = None
+        self.dialog = None
 
     def on_resume(self):
         print("resumed")
@@ -101,7 +117,8 @@ class GPSSketcher(app.App):
 
         if BUTTON_TYPES["CANCEL"] in event.button:
             self.button_states.clear()
-            self.minimise()
+            if not self.dialog:
+                self.minimise()
     
     def _handle_buttonup(self, event: ButtonUpEvent):
         if BUTTON_TYPES["LEFT"] in event.button:
@@ -114,7 +131,18 @@ class GPSSketcher(app.App):
         self.last_position = event.position
     
     def update(self, delta):
-        pass
+        if not self.displayed:
+            self.displayed = True
+            if f"GPSlog.csv" in os.listdir('/data/GPSSketcher'):
+                print("log found!")
+                self.dialog = YesNoDialog(
+                    message="resume sketch?",
+                    on_yes=self._yes_handler,
+                    on_no=self._no_handler,
+                    app=self,
+                )
+            else:
+                print("no existing log")
 
     def background_update(self, delta):
         if not self.gps:
@@ -123,6 +151,9 @@ class GPSSketcher(app.App):
         if not self.gps.sentences:
             return
 
+        if self.dialog:
+            return
+        
         sentence = self.gps.sentences[-1]
 
         if sentence != self.last_sentence:
@@ -133,24 +164,25 @@ class GPSSketcher(app.App):
                 self.rmc = rmc
             #print(f"self.gga.UTC_Time:{self.gga.UTC_Time}, self.rmc.UTC_Time:{self.rmc.UTC_Time}")
             if self.gga.Latitude > 0 and self.rmc.Latitude > 0:
-                if len(self.track) == 0:
-                    self.track.append([
-                        self.nmea_to_decimal(self.gga.Latitude, self.gga.NS_Indicator),
-                        self.nmea_to_decimal(self.gga.Longitude, self.gga.EW_Indicator),
-                        self.gga.UTC_Time,
-                        self.rmc.Date,
-                        self.gga.HDOP,
-                        self.gga.Satellites_Used,
-                        0,
-                        0
-                    ])
-                    self.collect_points()
-                    self.build_pixel_list()  
                 if (
                     self.gga.Position_Fix_Indicator > 0 and
-                    self.gga.Satellites_Used >= 6 and
-                    self.gga.HDOP < 1.2
+                    self.gga.Satellites_Used >= 5 and
+                    self.gga.HDOP < 2
                 ):
+                
+                    if len(self.track) == 0:
+                        self.track.append([
+                            self.nmea_to_decimal(self.gga.Latitude, self.gga.NS_Indicator),
+                            self.nmea_to_decimal(self.gga.Longitude, self.gga.EW_Indicator),
+                            self.gga.UTC_Time,
+                            self.rmc.Date,
+                            self.gga.HDOP,
+                            self.gga.Satellites_Used,
+                            0,
+                            0
+                        ])
+                        self.collect_points()
+                        self.build_pixel_list()  
                     
                     x,y = self.latlon_to_xy(self.track[-1][0], self.track[-1][1], self.nmea_to_decimal(self.gga.Latitude, self.gga.NS_Indicator), self.nmea_to_decimal(self.gga.Longitude, self.gga.EW_Indicator))
                     if abs(x) > 3 or abs(y) > 3:
@@ -171,9 +203,9 @@ class GPSSketcher(app.App):
                             )
                         )
                         self.build_pixel_list()
-                        #print(self.track)
-                    #else:
-                    #    print(f"x:{x}, y:{y}, PFI:{self.gga.Position_Fix_Indicator}, Sats:{self.gga.Satellites_Used}, HDOP:{self.gga.HDOP}")
+                        print(self.track)
+                else:
+                    print(f"PFI:{self.gga.Position_Fix_Indicator}, Sats:{self.gga.Satellites_Used}, HDOP:{self.gga.HDOP}")
                     
                 if len(self.track) > 10:
                     try:
@@ -198,26 +230,45 @@ class GPSSketcher(app.App):
         ctx.rgb(0, 0.2, 0).rectangle(-120, -120, 240, 240).fill()
         ctx.rgb(0, 1, 0)
 
-        if not self.gps:
-            ctx.move_to(-90, 10).text("GPS Not Found")
-            return
-        
-        # add a startup feature to start a new drawing or continue with the old
+        if self.dialog:
+            ctx.rgb(0, 0.2, 0).rectangle(-120, -120, 240, 240).fill() 
+            self.dialog.draw(ctx)
+        else:
+            #print(f"self.answer:{self.answer}")
+            if self.answer:
+                print("inside self.answer")
+                try:
+                    os.remove('/data/GPSSketcher/GPSlog.csv')
+                    print("os.remove successful")
+                except:
+                    print("os.remove failed")
+                self.answer = None
 
-        if not self.last_position:
-            ctx.move_to(-110, 10).text("Waiting For Fix")
-            return
-        
-        ctx.rgb(0, 1, 0).begin_path()
+            ctx.rgb(0, 0.2, 0).rectangle(-120, -120, 240, 240).fill()
+            ctx.rgb(0, 1, 0)
 
-        for i in range(1, len(self.screen_points)):
-            x1, y1 = self.screen_points[i - 1]
-            x2, y2 = self.screen_points[i]
+            if not self.gps:
+                ctx.move_to(-90, 10).text("GPS Not Found")
+                return
 
-            ctx.move_to(x1,y1)
-            ctx.line_to(x2,y2)
-        
-        ctx.stroke()
+            if not self.last_position:
+                ctx.move_to(-110, 10).text("Waiting For Fix")
+                return
+            
+            if (len(self.screen_points) < 2):
+                ctx.move_to(-100, 10).text("Move Around")
+                return
+
+            ctx.rgb(0, 1, 0).begin_path()
+            for i in range(1, len(self.screen_points)):
+                
+                x1, y1 = self.screen_points[i - 1]
+                x2, y2 = self.screen_points[i]
+
+                ctx.move_to(x1,y1)
+                ctx.line_to(x2,y2)
+            
+            ctx.stroke()
 
     def build_pixel_list(self):
         if len(self.display_points) > 1:
